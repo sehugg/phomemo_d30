@@ -1,5 +1,7 @@
 # phomemo_d30
-Python script to print text on a Phomemo D30 label printer
+Python script to print text and images on a Phomemo D30 label printer via Bluetooth Low Energy (BLE)
+
+Fork updated for macOS.
 
 # Acknowledgements
 Based on [phomemo-tools](https://github.com/vivier/phomemo-tools) by Laurent Vivier and
@@ -7,8 +9,13 @@ Based on [phomemo-tools](https://github.com/vivier/phomemo-tools) by Laurent Viv
 
 # Example
 <a href="http://www.youtube.com/watch?feature=player_embedded&v=U1ZqjYgFxjY
-" target="_blank"><img src="http://img.youtube.com/vi/U1ZqjYgFxjY/maxresdefault.jpg" 
+" target="_blank"><img src="http://img.youtube.com/vi/U1ZqjYgFxjY/maxresdefault.jpg"
 alt="Video example of the Python script" width="640" /></a>
+
+# Requirements
+- Python 3
+- ImageMagick (required for text rendering)
+- Bluetooth adapter with BLE support
 
 # Checkout and install
 ```bash
@@ -16,32 +23,52 @@ git clone https://github.com/polskafan/phomemo_d30.git
 cd phomemo_d30
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt
+. venv/bin/activate
 ```
 
 # Usage
-Connect to printer with rfcomm
+
+The script automatically discovers and connects to your Phomemo D30 printer via Bluetooth Low Energy. Just ensure your printer is powered on and Bluetooth is enabled on your computer.
+
+## Text Printing
+
+Basic usage:
 ```bash
-sudo rfcomm connect 1 XX:XX:XX:XX:XX:XX
+venv/bin/python print.py "Hello World!"
 ```
 
-Basic usage
+Print on "fruit" labels (adjusts offsets):
 ```bash
-venv/bin/python print_text.py "Hello World!"
+venv/bin/python print.py --fruit "This is a fruit label."
 ```
 
-Print on "fruit" labels
+Change font:
 ```bash
-venv/bin/python print_text.py --fruit "This is a fruit label."
+venv/bin/python print.py --font Arial.ttf "Hello World!"
 ```
 
-Change font
+Multiline labels:
 ```bash
-venv/bin/python print_text.py --font Arial.ttf "Hello World!"
+venv/bin/python print.py "First line\nSecond line"
 ```
 
-Multiline Labels
+## Image Printing
+
+Print an image file:
 ```bash
-venv/bin/python print_text.py "First line\nSecond line"
+venv/bin/python print.py --image photo.jpg
+```
+
+Print image on fruit label:
+```bash
+venv/bin/python print.py --image logo.png --fruit
+```
+
+## Manual Device Selection
+
+Skip auto-discovery by specifying the device address:
+```bash
+venv/bin/python print.py --device XX:XX:XX:XX:XX:XX "Text"
 ```
 
 ## Reverse engineering steps
