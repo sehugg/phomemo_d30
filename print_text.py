@@ -1,5 +1,6 @@
 import click
-import serial
+import asyncio
+from bleak import BleakScanner, BleakClient
 from wand.image import Image
 from wand.font import Font
 import PIL.Image
@@ -7,21 +8,62 @@ import image_helper
 import os
 
 
+# Phomemo D30 BLE characteristics
+# Discovered via BLE scanning - service 0000ff00, characteristic 0000ff02
+WRITE_CHARACTERISTIC_UUID = "0000ff02-0000-1000-8000-00805f9b34fb"
+
+
 @click.command()
 @click.argument('text')
 @click.option('--font', default="Helvetica", help='Path to TTF font file')
 @click.option('--fruit', is_flag=True, show_default=True, default=False,
               help='Enable offsets to print on a fruit label')
-def main(text, font, fruit):
-    port = serial.Serial("/dev/rfcomm1", timeout=10)
-
-    filename = generate_image(text, font, fruit, "temp.png")
-    header(port)
-    print_image(port, filename)
-    os.remove(filename)
+@click.option('--device', default=None, help='BLE device address (auto-discover if not provided)')
+def main(text, font, fruit, device):
+    asyncio.run(async_main(text, font, fruit, device))
 
 
-def header(port):
+async def async_main(text, font, fruit, device_address):
+    if device_address is None:
+        device_address = await discover_printer()
+        if device_address is None:
+            click.echo("No Phomemo D30 printer found. Please ensure it's powered on and in range.")
+            return
+
+    click.echo(f"Connecting to printer at {device_address}...")
+
+    async with BleakClient(device_address, timeout=20.0) as client:
+        if not client.is_connected:
+            click.echo("Failed to connect to printer")
+            return
+
+        click.echo("Connected! Preparing image...")
+        filename = generate_image(text, font, fruit, "temp.png")
+
+        click.echo("Sending print job...")
+        await header(client)
+        await print_image(client, filename)
+        os.remove(filename)
+
+        click.echo("Print complete!")
+
+
+async def discover_printer():
+    """Discover Phomemo D30 printer via BLE scanning"""
+    click.echo("Scanning for Phomemo D30 printer...")
+    devices = await BleakScanner.discover(timeout=10.0)
+
+    for device in devices:
+        # Look for D30 in device name
+        if device.name and "D30" in device.name.upper():
+            click.echo(f"Found printer: {device.name} ({device.address})")
+            return device.address
+
+    return None
+
+
+async def header(client):
+    """Send printer initialization packets via BLE"""
     # printer initialization sniffed from Android app "Print Master"
     packets = [
         '1f1138',
@@ -34,8 +76,8 @@ def header(port):
     ]
 
     for packet in packets:
-        port.write(bytes.fromhex(packet))
-        port.flush()
+        await client.write_gatt_char(WRITE_CHARACTERISTIC_UUID, bytes.fromhex(packet))
+        await asyncio.sleep(0.05)  # Small delay between packets
 
 
 def generate_image(text, font, fruit, filename):
@@ -62,7 +104,8 @@ def generate_image(text, font, fruit, filename):
     return filename
 
 
-def print_image(port, filename):
+async def print_image(client, filename):
+    """Send image data to printer via BLE"""
     width = 96
 
     with PIL.Image.open(filename) as src:
@@ -84,8 +127,13 @@ def print_image(port, filename):
                     byte |= (pixel & 0x01) << (7 - bit)
                 output.append(byte)
 
-        port.write(output)
-        port.flush()
+        # BLE has MTU limitations, so we may need to chunk large writes
+        # Most BLE devices support at least 20 bytes, commonly 512 bytes
+        MAX_CHUNK_SIZE = 512
+        for i in range(0, len(output), MAX_CHUNK_SIZE):
+            chunk_data = output[i:i + MAX_CHUNK_SIZE]
+            await client.write_gatt_char(WRITE_CHARACTERISTIC_UUID, chunk_data)
+            await asyncio.sleep(0.01)  # Small delay between chunks
 
         output = ''
 
