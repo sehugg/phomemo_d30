@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import click
 import asyncio
 from bleak import BleakScanner, BleakClient
@@ -14,16 +15,22 @@ WRITE_CHARACTERISTIC_UUID = "0000ff02-0000-1000-8000-00805f9b34fb"
 
 
 @click.command()
-@click.argument('text')
+@click.argument('text', required=False)
 @click.option('--font', default="Helvetica", help='Path to TTF font file')
 @click.option('--fruit', is_flag=True, show_default=True, default=False,
               help='Enable offsets to print on a fruit label')
 @click.option('--device', default=None, help='BLE device address (auto-discover if not provided)')
-def main(text, font, fruit, device):
-    asyncio.run(async_main(text, font, fruit, device))
+@click.option('--image', type=click.Path(exists=True), help='Print an image file instead of text')
+def main(text, font, fruit, device, image):
+    if image is None and text is None:
+        raise click.UsageError("Either TEXT argument or --image option is required")
+    if image is not None and text is not None:
+        raise click.UsageError("Cannot use both TEXT argument and --image option")
+
+    asyncio.run(async_main(text, font, fruit, device, image))
 
 
-async def async_main(text, font, fruit, device_address):
+async def async_main(text, font, fruit, device_address, image_path):
     if device_address is None:
         device_address = await discover_printer()
         if device_address is None:
@@ -38,7 +45,12 @@ async def async_main(text, font, fruit, device_address):
             return
 
         click.echo("Connected! Preparing image...")
-        filename = generate_image(text, font, fruit, "temp.png")
+
+        # Use provided image or generate from text
+        if image_path:
+            filename = prepare_image_file(image_path, fruit, "temp.png")
+        else:
+            filename = generate_image(text, font, fruit, "temp.png")
 
         click.echo("Sending print job...")
         await header(client)
@@ -80,7 +92,37 @@ async def header(client):
         await asyncio.sleep(0.05)  # Small delay between packets
 
 
+def prepare_image_file(image_path, fruit, output_filename):
+    """Prepare an existing image file for printing"""
+    if fruit:
+        width, height = 240, 80
+    else:
+        width, height = 288, 88
+
+    with Image(filename=image_path) as img:
+        # Resize to fit label dimensions while maintaining aspect ratio
+        img.transform(resize=f"{width}x{height}")
+
+        # Create a new image with exact dimensions and paste centered
+        with Image(width=width, height=height, background="white") as canvas:
+            # Center the image on the canvas
+            canvas.composite(img, left=(width - img.width) // 2, top=(height - img.height) // 2)
+
+            # extent and rotate image
+            canvas.background_color = "white"
+            canvas.gravity = "center"
+            if fruit:
+                canvas.extent(width=320, height=96, x=-60)
+            else:
+                canvas.extent(width=320, height=96)
+            canvas.rotate(270)
+            canvas.save(filename=output_filename)
+
+    return output_filename
+
+
 def generate_image(text, font, fruit, filename):
+    """Generate an image from text"""
     font = Font(path=font)
     if fruit:
         width, height = 240, 80
