@@ -100,6 +100,16 @@ def prepare_image_file(image_path, fruit, output_filename):
         width, height = 288, 88
 
     with Image(filename=image_path) as img:
+        # Detect if image is landscape or portrait
+        is_portrait = img.width < img.height
+
+        # If portrait, rotate 90 degrees to make it landscape before processing
+        if is_portrait:
+            click.echo(f"Detected portrait image ({img.width}x{img.height}), rotating to landscape...")
+            img.rotate(90)
+        else:
+            click.echo(f"Detected landscape image ({img.width}x{img.height})")
+
         # Resize to fit label dimensions while maintaining aspect ratio
         img.transform(resize=f"{width}x{height}")
 
@@ -107,6 +117,12 @@ def prepare_image_file(image_path, fruit, output_filename):
         with Image(width=width, height=height, background="white") as canvas:
             # Center the image on the canvas
             canvas.composite(img, left=(width - img.width) // 2, top=(height - img.height) // 2)
+
+            # Convert to 1-bit with Floyd-Steinberg dithering for better print quality
+            # First enhance contrast, then apply dithering
+            canvas.auto_level()  # Expand to full contrast
+            canvas.quantize(number_colors=2, colorspace_type='gray', dither='floyd_steinberg')
+            canvas.transform_colorspace('gray')
 
             # extent and rotate image
             canvas.background_color = "white"
