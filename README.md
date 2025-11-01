@@ -64,6 +64,19 @@ Print image on fruit label:
 venv/bin/python print.py --image logo.png --fruit
 ```
 
+Adjust brightness (0-200, default: 100):
+```bash
+venv/bin/python print.py --image photo.jpg --brightness 150
+```
+
+## Preview Mode
+
+Preview the processed black & white image without printing:
+```bash
+venv/bin/python print.py --preview preview.png "Hello World!"
+venv/bin/python print.py --image photo.jpg --brightness 120 --preview preview.png
+```
+
 ## Manual Device Selection
 
 Skip auto-discovery by specifying the device address:

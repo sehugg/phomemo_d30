@@ -21,16 +21,32 @@ WRITE_CHARACTERISTIC_UUID = "0000ff02-0000-1000-8000-00805f9b34fb"
               help='Enable offsets to print on a fruit label')
 @click.option('--device', default=None, help='BLE device address (auto-discover if not provided)')
 @click.option('--image', type=click.Path(exists=True), help='Print an image file instead of text')
-def main(text, font, fruit, device, image):
+@click.option('--preview', type=click.Path(), help='Output preview image to file instead of printing')
+@click.option('--brightness', type=float, default=100.0, help='Brightness adjustment for images (0-200, default: 100)')
+def main(text, font, fruit, device, image, preview, brightness):
     if image is None and text is None:
         raise click.UsageError("Either TEXT argument or --image option is required")
     if image is not None and text is not None:
         raise click.UsageError("Cannot use both TEXT argument and --image option")
 
-    asyncio.run(async_main(text, font, fruit, device, image))
+    asyncio.run(async_main(text, font, fruit, device, image, preview, brightness))
 
 
-async def async_main(text, font, fruit, device_address, image_path):
+async def async_main(text, font, fruit, device_address, image_path, preview_path, brightness):
+    # Preview mode - generate image and save without printing
+    if preview_path:
+        click.echo("Preparing preview image...")
+
+        # Use provided image or generate from text
+        if image_path:
+            prepare_image_file(image_path, fruit, preview_path, brightness)
+        else:
+            generate_image(text, font, fruit, preview_path)
+
+        click.echo(f"Preview saved to {preview_path}")
+        return
+
+    # Normal printing mode
     if device_address is None:
         device_address = await discover_printer()
         if device_address is None:
@@ -48,7 +64,7 @@ async def async_main(text, font, fruit, device_address, image_path):
 
         # Use provided image or generate from text
         if image_path:
-            filename = prepare_image_file(image_path, fruit, "temp.png")
+            filename = prepare_image_file(image_path, fruit, "temp.png", brightness)
         else:
             filename = generate_image(text, font, fruit, "temp.png")
 
@@ -92,7 +108,7 @@ async def header(client):
         await asyncio.sleep(0.05)  # Small delay between packets
 
 
-def prepare_image_file(image_path, fruit, output_filename):
+def prepare_image_file(image_path, fruit, output_filename, brightness=100.0):
     """Prepare an existing image file for printing"""
     if fruit:
         width, height = 240, 80
@@ -121,6 +137,11 @@ def prepare_image_file(image_path, fruit, output_filename):
             # Convert to 1-bit with Floyd-Steinberg dithering for better print quality
             # First enhance contrast, then apply dithering
             canvas.auto_level()  # Expand to full contrast
+
+            # Apply brightness adjustment (brightness is a percentage: 100 = no change)
+            if brightness != 100.0:
+                canvas.modulate(brightness=brightness)
+
             canvas.quantize(number_colors=2, colorspace_type='gray', dither='floyd_steinberg')
             canvas.transform_colorspace('gray')
 
